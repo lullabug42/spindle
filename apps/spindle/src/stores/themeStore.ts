@@ -8,23 +8,17 @@ export const useThemeStore = defineStore("theme", () => {
     const tauriStore = useTauriStore()
 
     async function initTheme() {
-        const preferences = tauriStore.preferences
-        if (preferences) {
-            const lastTheme = await preferences.get<string>("theme")
-            if (lastTheme) {
-                theme.value = lastTheme
-            }
+        const preferences = await tauriStore.getStore("preferences.json");
+        const lastTheme = await preferences.get<string>("theme");
+        if (lastTheme) {
+            theme.value = lastTheme;
         }
     }
     async function toggleTheme() {
-        const preferences = tauriStore.preferences
         theme.value = theme.value === "dark" ? "light" : "dark"
-        if (preferences) {
-            console.log("preferences", preferences)
-            await preferences.set("theme", theme.value)
-            await preferences.save()
-            console.log("preferences", preferences)
-        }
+        const preferences = await tauriStore.getStore("preferences.json");
+        await preferences.set("theme", theme.value)
+        await preferences.save()
     }
     return { theme, initTheme, toggleTheme }
 })
