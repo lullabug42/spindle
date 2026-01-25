@@ -3506,12 +3506,16 @@ dependencies = [
 name = "spindle"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
+ "spindle-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-store",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

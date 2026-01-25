@@ -31,7 +31,7 @@ pub struct ServiceConfig {
     pub workspace: Option<PathBuf>,
 }
 
-pub async fn scan_services(service_dir: &str) -> anyhow::Result<Vec<ServiceConfig>> {
+pub async fn scan_services(service_dir: &str) -> anyhow::Result<Vec<(ServiceConfig, String)>> {
     let mut entries = tokio::fs::read_dir(service_dir).await?;
     let mut ret = Vec::new();
     while let Some(entry) = entries.next_entry().await? {
@@ -65,7 +65,7 @@ pub async fn scan_services(service_dir: &str) -> anyhow::Result<Vec<ServiceConfi
                     continue;
                 }
             };
-            ret.push(config);
+            ret.push((config, path.to_string_lossy().to_string()));
         }
     }
     Ok(ret)
@@ -768,6 +768,72 @@ impl ServiceManager {
         };
         canceltoken.cancel();
         Ok(())
+    }
+
+    pub fn group_num(&self) -> usize {
+        self.service_groups.len()
+    }
+
+    pub fn group_service_infos(&self) -> Vec<GroupServiceInfo> {
+        let mut ret = Vec::with_capacity(self.service_groupidx_map.len());
+        for (group_idx, group) in self.service_groups.iter().enumerate() {
+            for node_idx in group.graph.node_indices() {
+                let meta = match group.graph.node_weight(node_idx) {
+                    Some(meta) => meta,
+                    None => {
+                        error!("nodeidx" = node_idx.index(), "node weight not found");
+                        continue;
+                    }
+                };
+                let dep_idxs = group
+                    .graph
+                    .neighbors_directed(node_idx, petgraph::Incoming)
+                    .map(|neighbor_idx| neighbor_idx.index())
+                    .collect();
+                let info = GroupServiceInfo::new(meta, group_idx, node_idx.index(), dep_idxs);
+                ret.push(info);
+            }
+        }
+        ret
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroupServiceInfo {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub config_path: String,
+    pub workspace: Option<String>,
+    pub group_idx: usize,
+    pub node_idx: usize,
+    pub dep_idxs: Vec<usize>,
+}
+
+impl GroupServiceInfo {
+    pub fn new(
+        meta: &ServiceMeta,
+        group_idx: usize,
+        node_idx: usize,
+        dep_idxs: Vec<usize>,
+    ) -> Self {
+        Self {
+            name: meta.name.to_string(),
+            version: meta.version.to_string(),
+            description: meta.description.to_string(),
+            program: meta.program.to_string_lossy().to_string(),
+            args: meta.args.iter().map(|s| s.to_string()).collect(),
+            config_path: meta.config_path.to_string(),
+            workspace: meta
+                .workspace
+                .clone()
+                .map(|p| p.to_string_lossy().to_string()),
+            group_idx,
+            node_idx,
+            dep_idxs,
+        }
     }
 }
 
