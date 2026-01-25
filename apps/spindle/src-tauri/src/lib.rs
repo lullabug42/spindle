@@ -24,7 +24,8 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             service::tauri_commands::reload_service_manager,
-            service::tauri_commands::service_group_infos
+            service::tauri_commands::service_group_infos,
+            service::tauri_commands::service_group_num,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

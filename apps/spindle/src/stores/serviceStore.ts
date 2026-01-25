@@ -29,5 +29,44 @@ export const useServiceStore = defineStore("service", () => {
         }
     }
 
-    return { getGroupAlias, setGroupAlias, removeGroupAlias, changeTrigger }
+    const DEFAULT_SERVICE_DIR = "./services";
+    async function getServiceDirs() {
+        const servicesStore = await tauriStore.getStore("services.json");
+        const serviceDirs = await servicesStore.get("service_dirs");
+        if (serviceDirs) {
+            return serviceDirs;
+        } else {
+            await servicesStore.set("service_dirs", [DEFAULT_SERVICE_DIR]);
+            await servicesStore.save();
+            return [DEFAULT_SERVICE_DIR];
+        }
+    }
+
+    async function addServiceDir(serviceDir: string) {
+        const servicesStore = await tauriStore.getStore("services.json");
+        let serviceDirs = await servicesStore.get<string[]>("service_dirs");
+        if (serviceDirs) {
+            serviceDirs.push(serviceDir);
+        } else {
+            serviceDirs = [serviceDir];
+        }
+        await servicesStore.set("service_dirs", serviceDirs);
+        await servicesStore.save();
+        ++changeTrigger.value;
+    }
+
+    async function removeServiceDir(serviceDir: string) {
+        const servicesStore = await tauriStore.getStore("services.json");
+        let serviceDirs = await servicesStore.get<string[]>("service_dirs");
+        if (serviceDirs) {
+            serviceDirs = serviceDirs.filter(dir => dir !== serviceDir);
+        } else {
+            serviceDirs = [DEFAULT_SERVICE_DIR];
+        }
+        await servicesStore.set("service_dirs", serviceDirs);
+        await servicesStore.save();
+        ++changeTrigger.value;
+    }
+
+    return { getGroupAlias, setGroupAlias, removeGroupAlias, changeTrigger, getServiceDirs, addServiceDir, removeServiceDir }
 })

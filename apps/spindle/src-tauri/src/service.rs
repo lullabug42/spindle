@@ -56,6 +56,11 @@ async fn service_group_infos(state: State<'_, AppState>) -> anyhow::Result<Vec<G
     Ok(service_manager.group_service_infos())
 }
 
+async fn service_group_num(state: State<'_, AppState>) -> anyhow::Result<usize> {
+    let service_manager = service_manager(state).await?;
+    Ok(service_manager.group_num())
+}
+
 pub mod tauri_commands {
     use spindle_core::service::GroupServiceInfo;
     use tauri::State;
@@ -81,5 +86,13 @@ pub mod tauri_commands {
             .await
             .map_err(|e| e.to_string())?;
         Ok(infos)
+    }
+
+    #[tauri::command]
+    pub async fn service_group_num(state: State<'_, AppState>) -> Result<usize, String> {
+        let num = super::service_group_num(state)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(num)
     }
 }

@@ -1,11 +1,11 @@
 import { useServiceStore } from "@/stores/serviceStore";
-import { ServiceConfig } from "@/types/service.types";
+import { GroupServiceInfo } from "@/types/service.types";
 import { toHash } from "@/utils/serviceHash";
 import { computed, MaybeRefOrGetter, ref, toValue, watch } from "vue";
 
 
-export function useServiceTransformer(configs: MaybeRefOrGetter<ServiceConfig[]>) {
-    const groupSha256Values = computed(() => toValue(configs).map(toHash));
+export function useServiceAlias(groupServiceInfos: MaybeRefOrGetter<GroupServiceInfo[]>) {
+    const groupSha256Values = computed(() => toValue(groupServiceInfos).map(toHash));
 
     const groupAliasMap = ref(new Map<string, string>());
     const serviceStore = useServiceStore();
@@ -46,5 +46,5 @@ export function useServiceTransformer(configs: MaybeRefOrGetter<ServiceConfig[]>
     })
 
 
-    return { groupAliasMap, aliasedGroupIdxs, unaliasedGroupIdxs };
+    return { groupAliasMap, groupSha256Values, aliasedGroupIdxs, unaliasedGroupIdxs };
 }
