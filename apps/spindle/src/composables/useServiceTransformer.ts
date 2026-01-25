@@ -9,7 +9,7 @@ export function useServiceTransformer(configs: MaybeRefOrGetter<ServiceConfig[]>
 
     const groupAliasMap = ref(new Map<string, string>());
     const serviceStore = useServiceStore();
-    watch(groupSha256Values, async (newGroupSha256Values, _, onCleanUp) => {
+    watch([groupSha256Values, () => serviceStore.changeTrigger], async ([newGroupSha256Values, _trigger], _old, onCleanUp) => {
         let isCancelled = false;
         onCleanUp(() => isCancelled = true);
         const newAliasMap = new Map<string, string>();
