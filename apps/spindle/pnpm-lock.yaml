@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.0.1
       '@tauri-apps/api':
         specifier: ^2
         version: 2.9.1
@@ -23,6 +26,9 @@ importers:
       '@vicons/material':
         specifier: ^0.13.0
         version: 0.13.0
+      canonical-json:
+        specifier: ^0.2.0
+        version: 0.2.0
       naive-ui:
         specifier: ^2.43.2
         version: 2.43.2(vue@3.5.27(typescript@5.6.3))
@@ -35,6 +41,9 @@ importers:
       vue-router:
         specifier: ^4.6.4
         version: 4.6.4(vue@3.5.27(typescript@5.6.3))
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2
@@ -245,6 +254,10 @@ packages:
 
   '@juggle/resize-observer@3.4.0':
     resolution: {integrity: sha512-dfLbk+PwWvFzSxwk3n5ySL0hfBog779o8h68wK/7/APo/7cgyWp5jcXockbxdk5kFRkbeXWm4Fbi9FrdN381sA==}
+
+  '@noble/hashes@2.0.1':
+    resolution: {integrity: sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==}
+    engines: {node: '>= 20.19.0'}
 
   '@rollup/rollup-android-arm-eabi@4.56.0':
     resolution: {integrity: sha512-LNKIPA5k8PF1+jAFomGe3qN3bbIgJe/IlpDBwuVjrDKrJhVWywgnJvflMt/zkbVNLFtF1+94SljYQS6e99klnw==}
@@ -552,6 +565,10 @@ packages:
   brace-expansion@2.0.2:
     resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
 
+  canonical-json@0.2.0:
+    resolution: {integrity: sha512-xeH/NgtNA7kIuKSxopJVdXqCKWyDB79aqxQRQ9FV02fvmqW7DSnjoFyzAUrBpfbwjU6lwTYOLc+HM6KupbsfVQ==}
+    hasBin: true
+
   copy-anything@4.0.5:
     resolution: {integrity: sha512-7Vv6asjS4gMOuILabD3l739tsaxFQmC+a7pLZm02zyvs8p977bL3zEgq3yDk5rn9B0PbYgIv++jmHcuUab4RhA==}
     engines: {node: '>=18'}
@@ -790,6 +807,9 @@ packages:
     peerDependencies:
       vue: ^3.0.11
 
+  zod@4.3.6:
+    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+
 snapshots:
 
   '@babel/helper-string-parser@7.27.1': {}
@@ -896,6 +916,8 @@ snapshots:
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
   '@juggle/resize-observer@3.4.0': {}
+
+  '@noble/hashes@2.0.1': {}
 
   '@rollup/rollup-android-arm-eabi@4.56.0':
     optional: true
@@ -1166,6 +1188,8 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
 
+  canonical-json@0.2.0: {}
+
   copy-anything@4.0.5:
     dependencies:
       is-what: 5.5.0
@@ -1408,3 +1432,5 @@ snapshots:
       vdirs: 0.1.8(vue@3.5.27(typescript@5.6.3))
       vooks: 0.2.12(vue@3.5.27(typescript@5.6.3))
       vue: 3.5.27(typescript@5.6.3)
+
+  zod@4.3.6: {}
