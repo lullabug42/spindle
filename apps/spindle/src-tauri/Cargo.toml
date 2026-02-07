@@ -27,3 +27,6 @@ tokio = { version = "1.49.0", features = ["rt-multi-thread", "sync"] }
 spindle-core = { version = "0.1.0", path = "../../../crates/spindle-core" }
 anyhow = "1.0.100"
 tracing = "0.1.44"
+dashmap = "6.1.0"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+sqlx = "0.8.6"

@@ -13,6 +13,7 @@
     "@noble/hashes": "^2.0.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-sql": "~2.3.2",
     "@tauri-apps/plugin-store": "^2.4.2",
     "@types/node": "^25.0.10",
     "@vicons/material": "^0.13.0",
