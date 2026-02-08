@@ -2,7 +2,7 @@
  * Pinia store for service groups and polling.
  *
  * @remarks
- * When USE_MOCK is true, uses {@link mockGroupsForDev} (all topology scenarios).
+ * When useMock is true, uses {@link mockGroupsForDev} (all topology scenarios).
  * To use only the four showcase groups, import `mockGroups` instead and set `groups.value = mockGroups`.
  */
 import { defineStore } from "pinia";
@@ -14,9 +14,6 @@ import { mockGroupsForDev } from "@/mocks/serviceMock";
 
 /** Polling interval in milliseconds. */
 const POLL_INTERVAL_MS = 3000;
-
-/** When true, use mock data instead of Tauri API. */
-const USE_MOCK = true;
 
 /** Adds status to a stored config to produce a {@link ServiceItem}. */
 function withStatus(config: StoredServiceConfig, status: string): ServiceItem {
@@ -96,8 +93,7 @@ export const useServiceStore = defineStore("service", () => {
   /** Fetches groups (mock or API) and updates {@link groups}. */
   async function fetchGroups() {
     loading.value = true;
-    if (USE_MOCK) {
-      useMock.value = true;
+    if (useMock.value) {
       groups.value = mockGroupsForDev;
       loading.value = false;
       return;
@@ -141,6 +137,18 @@ export const useServiceStore = defineStore("service", () => {
     }
   }
 
+  /**
+   * Sets whether to use mock data. When switching to real data, calls
+   * {@link reloadServiceManager} first so service_state and group APIs are available.
+   */
+  async function setUseMock(value: boolean) {
+    useMock.value = value;
+    if (!value) {
+      await serviceApi.reloadServiceManager();
+    }
+    await fetchGroups();
+  }
+
   /** Launches a group by id and then refetches groups. */
   async function launchGroup(groupId: number) {
     await serviceApi.launchGroup({ group_id: groupId, timeout_ms: 30_000 });
@@ -169,6 +177,7 @@ export const useServiceStore = defineStore("service", () => {
     fetchGroups,
     startPolling,
     stopPolling,
+    setUseMock,
     launchGroup,
     stopGroup,
     groupById,
