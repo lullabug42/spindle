@@ -1,0 +1,15 @@
+# build
+dist
+*.local
+
+# deps
+node_modules
+pnpm-lock.yaml
+
+# Tauri / Rust (Prettier for JS/TS/Vue only)
+src-tauri
+
+# generated / assets
+public
+*.min.js
+*.min.css

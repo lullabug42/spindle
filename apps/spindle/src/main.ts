@@ -4,12 +4,13 @@ import { createPinia } from "pinia";
 import { useThemeStore } from "./stores/themeStore";
 import router from "@/router";
 
-const app = createApp(App)
-const pinia = createPinia()
+const app = createApp(App);
+const pinia = createPinia();
 
-app.use(pinia)
-await useThemeStore().initTheme()
+app.use(pinia);
 
-app.use(router)
-
-app.mount("#app")
+(async () => {
+  await useThemeStore().initTheme();
+  app.use(router);
+  app.mount("#app");
+})();

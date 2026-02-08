@@ -1004,6 +1004,40 @@ impl ServiceManager {
         }
         ret
     }
+
+    /// Returns (name, version) for services in the group that have in-degree 0 (no dependencies within the group).
+    /// Stopping these roots will cascade-stop the whole group via [Self::stop_service].
+    ///
+    /// # Arguments
+    ///
+    /// * `group_idx` - Index of the group.
+    ///
+    /// # Returns
+    ///
+    /// Vector of (name, version); empty if `group_idx` is invalid.
+    pub fn group_root_service_keys(&self, group_idx: usize) -> Vec<(String, String)> {
+        let group = match self.service_groups.get(group_idx) {
+            Some(group) => group,
+            None => {
+                warn!("group_idx" = group_idx, "group not found");
+                return Vec::new();
+            }
+        };
+        let mut ret = Vec::new();
+        for node_idx in group.graph.node_indices() {
+            let has_incoming = group
+                .graph
+                .neighbors_directed(node_idx, petgraph::Incoming)
+                .next()
+                .is_some();
+            if !has_incoming {
+                if let Some(meta) = group.graph.node_weight(node_idx) {
+                    ret.push((meta.name.to_string(), meta.version.to_string()));
+                }
+            }
+        }
+        ret
+    }
 }
 
 async fn handle_service_manager_event(

@@ -5,6 +5,7 @@ import type {
   InsertGroupAliasParams,
   GroupIdParams,
   LaunchGroupParams,
+  GroupInfo,
 } from "../types/service.types";
 
 /** Tauri command names for service-related backend handlers. */
@@ -19,6 +20,9 @@ const CMD = {
   launch_group: "launch_group",
   stop_service: "stop_service",
   service_state: "service_state",
+  stop_group: "stop_group",
+  aliased_group_service: "aliased_group_service",
+  unaliased_group_service: "unaliased_group_service",
 } as const;
 
 /**
@@ -151,4 +155,35 @@ export function serviceState(params: ServiceNameVersionParams): Promise<string> 
     name: params.name,
     version: params.version,
   });
+}
+
+/**
+ * Stops all services in the given group (stops in-degree-0 services; backend cascades to dependents).
+ *
+ * @param params - Group id; see {@link GroupIdParams}.
+ * @returns Resolves when the group has been stopped.
+ * @throws Rejects if the service manager is not initialized, group id is invalid, or stop fails.
+ */
+export function stopGroup(params: GroupIdParams): Promise<void> {
+  return invoke<void>(CMD.stop_group, {
+    group_id: params.group_id,
+  });
+}
+
+/**
+ * Returns all groups that have an alias set.
+ *
+ * @returns Array of {@link GroupInfo} for each aliased group.
+ */
+export function aliasedGroupService(): Promise<GroupInfo[]> {
+  return invoke<GroupInfo[]>(CMD.aliased_group_service);
+}
+
+/**
+ * Returns all groups that have no alias set.
+ *
+ * @returns Array of {@link GroupInfo} for each unaliased group.
+ */
+export function unaliasedGroupService(): Promise<GroupInfo[]> {
+  return invoke<GroupInfo[]>(CMD.unaliased_group_service);
 }

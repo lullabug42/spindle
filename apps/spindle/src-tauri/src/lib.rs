@@ -40,6 +40,9 @@ pub fn run() {
             service::tauri_cmd::launch_group,
             service::tauri_cmd::stop_service,
             service::tauri_cmd::service_state,
+            service::tauri_cmd::stop_group,
+            service::tauri_cmd::aliased_group_service,
+            service::tauri_cmd::unaliased_group_service,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

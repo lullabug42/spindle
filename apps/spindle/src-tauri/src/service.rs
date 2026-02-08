@@ -756,6 +756,134 @@ async fn remove_group_alias(app: &tauri::AppHandle, group_id: u32) -> anyhow::Re
     Ok(())
 }
 
+/// Stops all services in the given group by stopping in-degree-0 (root) services;
+/// the backend cascades stop to dependents.
+///
+/// # Arguments
+///
+/// * `app` - Tauri app handle.
+/// * `group_id` - Group id to stop.
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an error.
+async fn stop_group(app: &tauri::AppHandle, group_id: u32) -> anyhow::Result<()> {
+    let app_state = app.state::<Mutex<crate::AppState>>();
+    let service_manager = match app_state.lock().await.service_manager.as_ref() {
+        Some(sm) => sm.clone(),
+        None => anyhow::bail!("Service manager not initialized"),
+    };
+    let group_num = service_manager.group_num();
+    if group_id as usize >= group_num {
+        anyhow::bail!("Invalid group id: {}", group_id);
+    }
+    let roots = service_manager.group_root_service_keys(group_id as usize);
+    for (name, version) in roots {
+        service_manager.stop_service(&name, &version).await?;
+    }
+    Ok(())
+}
+
+/// Group information including group_id, alias, and services.
+#[derive(Debug, Serialize)]
+pub struct GroupInfo {
+    /// Group id.
+    pub group_id: u32,
+    /// Alias for the group.
+    pub alias: Option<String>,
+    /// Services in the group.
+    pub services: Vec<StoredServiceConfig>,
+}
+
+/// Collects [GroupInfo] for a group: group_id, alias, and stored service configs.
+///
+/// # Arguments
+///
+/// * `app` - Tauri app handle.
+/// * `service_manager` - Service manager.
+/// * `group_id` - Group id.
+/// * `alias` - Alias for the group.
+///
+/// # Returns
+///
+/// `GroupInfo` for the group.
+async fn collect_group_info(
+    app: &tauri::AppHandle,
+    service_manager: &ServiceManager,
+    group_id: usize,
+    alias: Option<String>,
+) -> GroupInfo {
+    let service_keys = service_manager.group_service_keys(group_id);
+    let mut services = Vec::with_capacity(service_keys.len());
+    for (name, version) in service_keys {
+        if let Some(service_id) = query_service_id_by_name_and_version(app, &name, &version).await {
+            if let Some(config) = query_stored_service_config(app, service_id).await {
+                services.push(config);
+            }
+        }
+    }
+    GroupInfo {
+        group_id: group_id as u32,
+        alias,
+        services,
+    }
+}
+
+/// Returns all groups that have an alias set.
+///
+/// # Arguments
+///
+/// * `app` - Tauri app handle.
+///
+/// # Returns
+///
+/// `Vec<GroupInfo>` for all groups that have an alias set.
+async fn aliased_group_service(app: &tauri::AppHandle) -> Vec<GroupInfo> {
+    let app_state = app.state::<Mutex<crate::AppState>>();
+    let service_manager = match app_state.lock().await.service_manager.as_ref() {
+        Some(sm) => sm.clone(),
+        None => return Vec::new(),
+    };
+    let group_num = service_manager.group_num();
+    let mut ret = Vec::new();
+    for group_id in 0..group_num {
+        let alias = match query_group_alias(app, group_id as u32).await {
+            Some(a) => a,
+            None => continue,
+        };
+        let info = collect_group_info(app, &service_manager, group_id, Some(alias)).await;
+        ret.push(info);
+    }
+    ret
+}
+
+/// Returns all groups that have no alias set.
+///
+/// # Arguments
+///
+/// * `app` - Tauri app handle.
+///
+/// # Returns
+///
+/// `Vec<GroupInfo>` for all groups that have no alias set.
+async fn unaliased_group_service(app: &tauri::AppHandle) -> Vec<GroupInfo> {
+    let app_state = app.state::<Mutex<crate::AppState>>();
+    let service_manager = match app_state.lock().await.service_manager.as_ref() {
+        Some(sm) => sm.clone(),
+        None => return Vec::new(),
+    };
+    let group_num = service_manager.group_num();
+    let mut ret = Vec::new();
+    for group_id in 0..group_num {
+        if query_group_alias(app, group_id as u32).await.is_some() {
+            continue;
+        }
+        let info = collect_group_info(app, &service_manager, group_id, None).await;
+        ret.push(info);
+    }
+    ret
+}
+
 /// Tauri commands exposed to the frontend: service add/remove, reload, group membership and aliases.
 pub mod tauri_cmd {
     use tauri::Manager;
@@ -1015,6 +1143,17 @@ pub mod tauri_cmd {
             .map_err(|e| e.to_string())
     }
 
+    /// Returns the state of a service by (name, version).
+    ///
+    /// # Arguments
+    ///
+    /// * `app` - Tauri app handle.
+    /// * `name` - Service name.
+    /// * `version` - Service version.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(state)` on success, or `Err(message)` on failure.
     #[tauri::command]
     pub async fn service_state(
         app: tauri::AppHandle,
@@ -1030,5 +1169,48 @@ pub mod tauri_cmd {
             .service_state(&name, &version)
             .ok_or("Service not found".to_string())?;
         Ok(state.to_string())
+    }
+
+    /// Stops all services in the given group.
+    ///
+    /// # Arguments
+    ///
+    /// * `app` - Tauri app handle.
+    /// * `group_id` - Group id to stop.
+    ///
+    #[tauri::command]
+    pub async fn stop_group(app: tauri::AppHandle, group_id: u32) -> Result<(), String> {
+        super::stop_group(&app, group_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Returns all groups that have an alias set.
+    ///
+    /// # Arguments
+    ///
+    /// * `app` - Tauri app handle.
+    ///
+    /// # Returns
+    ///
+    /// `Vec<GroupInfo>` for all groups that have an alias set.
+    #[tauri::command]
+    pub async fn aliased_group_service(app: tauri::AppHandle) -> Vec<super::GroupInfo> {
+        super::aliased_group_service(&app).await
+    }
+
+    /// Returns all groups that have no alias set.
+    ///
+    /// # Arguments
+    ///
+    /// * `app` - Tauri app handle.
+    ///
+    /// # Returns
+    ///
+    /// `Vec<GroupInfo>` for all groups that have no alias set.
+    #[tauri::command]
+    pub async fn unaliased_group_service(app: tauri::AppHandle) -> Vec<super::GroupInfo> {
+        super::unaliased_group_service(&app).await
     }
 }
