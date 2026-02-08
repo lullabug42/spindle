@@ -1040,6 +1040,14 @@ impl ServiceManager {
     }
 }
 
+impl Drop for ServiceManager {
+    /// Cancels the root token so all child service tasks receive cancellation and kill their subprocesses.
+    fn drop(&mut self) {
+        info!("Service manager dropped, cancelling root token");
+        self.cancel_token.cancel();
+    }
+}
+
 async fn handle_service_manager_event(
     mut event_rx: mpsc::Receiver<ServiceManagerEvent>,
     manager: Weak<ServiceManager>,
