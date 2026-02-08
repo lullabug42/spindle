@@ -36,64 +36,6 @@ pub struct ServiceConfig {
     pub workspace: Option<PathBuf>,
 }
 
-/// Result of scanning one service file: config and path.
-pub struct ScanServicesResult {
-    pub service_config: ServiceConfig,
-    pub config_path: String,
-}
-
-/// Scans a directory for `.toml` service config files and parses them.
-///
-/// # Arguments
-///
-/// * `service_dir` - Directory path to scan for service config files.
-///
-/// # Returns
-///
-/// `Ok(vec of ScanServicesResult)` for each valid toml config; invalid files are skipped with a warning.
-pub async fn scan_services(service_dir: &str) -> anyhow::Result<Vec<ScanServicesResult>> {
-    let mut entries = tokio::fs::read_dir(service_dir).await?;
-    let mut ret = Vec::new();
-    while let Some(entry) = entries.next_entry().await? {
-        let metadata = entry.metadata().await?;
-        if metadata.is_file() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("toml") {
-                continue;
-            }
-            let file_type = match entry.file_type().await {
-                Ok(ft) => ft,
-                Err(e) => {
-                    warn!(path = ?path, error = ?e, "Failed to get file type");
-                    continue;
-                }
-            };
-            if !file_type.is_file() {
-                continue;
-            }
-            let file_str = match tokio::fs::read_to_string(&path).await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!(path = ?path, error = ?e, "Failed to read service config");
-                    continue;
-                }
-            };
-            let config = match toml::from_str(&file_str) {
-                Ok(config) => config,
-                Err(e) => {
-                    warn!(path = ?path, error = ?e, "Failed to parse service config");
-                    continue;
-                }
-            };
-            ret.push(ScanServicesResult {
-                service_config: config,
-                config_path: path.to_string_lossy().to_string(),
-            });
-        }
-    }
-    Ok(ret)
-}
-
 /// Immutable metadata for a service used at runtime (name, version, program, args, workspace).
 #[derive(Debug, Clone)]
 pub struct ServiceMeta {
