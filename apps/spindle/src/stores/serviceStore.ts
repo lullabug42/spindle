@@ -138,13 +138,18 @@ export const useServiceStore = defineStore("service", () => {
   }
 
   /**
-   * Sets whether to use mock data. When switching to real data, calls
-   * {@link reloadServiceManager} first so service_state and group APIs are available.
+   * Sets whether to use mock data.
+   * When switching to mock: stops polling (mock data is static).
+   * When switching to real data: calls {@link reloadServiceManager}, fetches once, then starts polling.
    */
   async function setUseMock(value: boolean) {
     useMock.value = value;
-    if (!value) {
+    if (value) {
+      stopPolling();
+    } else {
       await serviceApi.reloadServiceManager();
+      startPolling();
+      return;
     }
     await fetchGroups();
   }
