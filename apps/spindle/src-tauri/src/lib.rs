@@ -10,6 +10,7 @@ mod service;
 
 struct AppState {
     service_manager: Option<Arc<ServiceManager>>, // lazy init
+    logger_broadcast_receiver: Option<tokio::sync::broadcast::Receiver<String>>,
     _logger_guard: Option<logger::WorkerGuard>,
 }
 
@@ -17,6 +18,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             service_manager: None,
+            logger_broadcast_receiver: None,
             _logger_guard: None,
         }
     }
@@ -34,18 +36,23 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(AppState::default()))
         .setup(|app| {
-            let worker_guard = logger::init_logger(None, Some(app.handle()))
+            let logger_result = logger::init_logger(None, Some(app.handle()))
                 .inspect_err(|e| eprintln!("logger init failed: {:?}", e))
-                .unwrap_or(None);
+                .unwrap_or_else(|_| logger::LoggerInitResult {
+                    worker_guard: None,
+                    broadcast_receiver: None,
+                });
 
-            // Store logger guard in AppState
+            // Store logger guard and broadcast receiver in AppState
             let app_state = app.state::<Mutex<AppState>>();
             let mut state = app_state.blocking_lock();
-            state._logger_guard = worker_guard;
+            state._logger_guard = logger_result.worker_guard;
+            state.logger_broadcast_receiver = logger_result.broadcast_receiver;
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // service
             service::tauri_cmd::add_service,
             service::tauri_cmd::remove_service,
             service::tauri_cmd::reload_service_manager,
@@ -59,6 +66,8 @@ pub fn run() {
             service::tauri_cmd::stop_group,
             service::tauri_cmd::aliased_group_service,
             service::tauri_cmd::unaliased_group_service,
+            // logger
+            logger::tauri_cmd::subscribe_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
