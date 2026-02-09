@@ -3829,6 +3829,8 @@ dependencies = [
  "tauri-plugin-store",
  "tokio",
  "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]

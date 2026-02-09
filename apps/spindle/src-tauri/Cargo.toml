@@ -30,3 +30,5 @@ tracing = "0.1.44"
 dashmap = "6.1.0"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 sqlx = "0.8.6"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.22", features = ["time", "json"] }

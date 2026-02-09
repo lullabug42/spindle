@@ -1,19 +1,23 @@
 use std::sync::Arc;
 
 use spindle_core::service::ServiceManager;
+use tauri::Manager;
 use tokio::sync::Mutex;
 
 mod db;
+mod logger;
 mod service;
 
 struct AppState {
     service_manager: Option<Arc<ServiceManager>>, // lazy init
+    _logger_guard: Option<logger::WorkerGuard>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             service_manager: None,
+            _logger_guard: None,
         }
     }
 }
@@ -29,6 +33,25 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(AppState::default()))
+        .setup(|app| {
+            let worker_guard = logger::init_logger(None, Some(app.handle()))
+                .inspect_err(|e| eprintln!("logger init failed: {:?}", e))
+                .unwrap_or(None);
+
+            // Test logs
+            tracing::info!("test log");
+            tracing::warn!("test log");
+            tracing::error!("test log");
+            tracing::debug!("test log");
+            tracing::trace!("test log");
+
+            // Store logger guard in AppState
+            let app_state = app.state::<Mutex<AppState>>();
+            let mut state = app_state.blocking_lock();
+            state._logger_guard = worker_guard;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             service::tauri_cmd::add_service,
             service::tauri_cmd::remove_service,
