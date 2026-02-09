@@ -38,13 +38,6 @@ pub fn run() {
                 .inspect_err(|e| eprintln!("logger init failed: {:?}", e))
                 .unwrap_or(None);
 
-            // Test logs
-            tracing::info!("test log");
-            tracing::warn!("test log");
-            tracing::error!("test log");
-            tracing::debug!("test log");
-            tracing::trace!("test log");
-
             // Store logger guard in AppState
             let app_state = app.state::<Mutex<AppState>>();
             let mut state = app_state.blocking_lock();
