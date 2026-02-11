@@ -1,11 +1,12 @@
 <!--
   ServiceGroupDetail: Detail page for one service group. Shows card view or topology graph;
   supports opening a service via query (name@version). Starts/stops polling with the view.
+  Provides service deletion with error handling.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
-import { NButton, NSpace, NFlex } from "naive-ui";
+import { NButton, NSpace, NFlex, useMessage } from "naive-ui";
 import { GridViewOutlined, HubOutlined } from "@vicons/material";
 import { NIcon } from "naive-ui";
 import ServiceItem from "@/components/services-view/ServiceItem.vue";
@@ -16,6 +17,7 @@ import type { ServiceItem as ServiceItemType } from "@/types/service.types";
 
 const route = useRoute();
 const store = useServiceStore();
+const message = useMessage();
 
 const detailModalVisible = ref(false);
 const selectedService = ref<ServiceItemType | null>(null);
@@ -65,6 +67,23 @@ function openDetail(service: ServiceItemType) {
   selectedService.value = service;
   detailModalVisible.value = true;
 }
+
+/**
+ * Handles service deletion from the detail view.
+ * Shows success/error messages based on the operation result.
+ * @param service - The service to delete.
+ */
+async function onServiceDelete(service: ServiceItemType): Promise<void> {
+  try {
+    await store.removeServiceFromStore({
+      name: service.name,
+      version: service.version,
+    });
+    message.success(`Service "${service.name}:${service.version}" deleted successfully`);
+  } catch (error) {
+    message.error(`${error}`);
+  }
+}
 </script>
 
 <template>
@@ -95,8 +114,14 @@ function openDetail(service: ServiceItemType) {
 
       <div v-if="store.detailViewMode === 'card'" class="card-view">
         <div class="card-grid">
-          <ServiceItem v-for="svc in group.services" :key="`${svc.name}-${svc.version}`" :service="svc" layout="card"
-            @click="openDetail(svc)" />
+          <ServiceItem 
+            v-for="svc in group.services" 
+            :key="`${svc.name}-${svc.version}`" 
+            :service="svc" 
+            layout="card"
+            @click="openDetail(svc)"
+            @delete="onServiceDelete"
+          />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { darkTheme, lightTheme, NConfigProvider, NGlobalStyle } from "naive-ui";
+import { darkTheme, lightTheme, NConfigProvider, NGlobalStyle, NMessageProvider } from "naive-ui";
 import { computed } from "vue";
 import BasicLayout from "@/layouts/BasicLayout.vue";
 import { useThemeStore } from "@/stores/themeStore";
@@ -11,7 +11,9 @@ const theme = computed(() => themeStore.theme === "dark" ? darkTheme : lightThem
 <template>
   <n-config-provider :theme="theme">
     <n-global-style />
-    <BasicLayout />
+    <n-message-provider>
+      <BasicLayout />
+    </n-message-provider>
   </n-config-provider>
 </template>
 

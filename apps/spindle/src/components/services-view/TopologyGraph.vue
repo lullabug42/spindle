@@ -11,9 +11,14 @@ import ServiceItem from "./ServiceItem.vue";
 import DummyNode from "./DummyNode.vue";
 import type { GroupWithStatus, ServiceItem as ServiceItemType } from "@/types/service.types";
 
+// ============================================================================
+// Constants
+// ============================================================================
+
 /** Theme vars: borderColor follows theme (light/dark), use for border and shadow. */
 const themeVars = useThemeVars();
 
+/** Node dimensions for layout calculation. */
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 96;
 
@@ -22,8 +27,24 @@ const DUMMY_START_ID = "__root";
 /** Dummy sink id: leaf nodes (no downstream) connect to this node. */
 const DUMMY_END_ID = "__sink";
 
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+type NodeItem = { x: number; y: number; data: ServiceItemType };
+type DummyNodeItem = { x: number; y: number; kind: "start" | "end" };
+type LinkItem = {
+  sourceKey: string;
+  targetKey: string;
+  points: [number, number][];
+};
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 /**
- * Unique key for a node; used to associate links with node positions.
+ * Generates a unique key for a node; used to associate links with node positions.
  * @param data - Node datum (service or dummy).
  */
 function nodeKey(data: ServiceItemType): string {
@@ -32,8 +53,18 @@ function nodeKey(data: ServiceItemType): string {
   return `${data.name}-${data.version}`;
 }
 
-/** Builds a dummy node datum for start/sink. */
-function dummyDatum(name: string): ServiceItemType {
+/**
+ * Checks if a node is a dummy node (start or end).
+ */
+function isDummyNode(name: string): boolean {
+  return name === DUMMY_START_ID || name === DUMMY_END_ID;
+}
+
+/**
+ * Builds a dummy node datum for start/sink nodes.
+ * @param name - Either DUMMY_START_ID or DUMMY_END_ID.
+ */
+function createDummyDatum(name: string): ServiceItemType {
   return {
     service_id: -1,
     name,
@@ -48,6 +79,10 @@ function dummyDatum(name: string): ServiceItemType {
   } as ServiceItemType;
 }
 
+// ============================================================================
+// Component Props & Emits
+// ============================================================================
+
 const props = defineProps<{
   group: GroupWithStatus | null;
 }>();
@@ -56,46 +91,56 @@ const emit = defineEmits<{
   (e: "node-click", service: ServiceItemType): void;
 }>();
 
+// ============================================================================
+// Refs & State
+// ============================================================================
+
 const containerRef = ref<HTMLElement | null>(null);
 const graphContentRef = ref<HTMLElement | null>(null);
 
 /** Container size; SVG/canvas matches parent; updated by ResizeObserver. */
 const containerSize = ref({ width: 640, height: 480 });
 
+/** Layout calculation result (width and height of the DAG). */
 const layoutResult = ref<{ width: number; height: number } | null>(null);
-const nodes = ref<Array<{ x: number; y: number; data: ServiceItemType }>>([]);
+
+/** Real service nodes with their positions. */
+const nodes = ref<NodeItem[]>([]);
+
 /** Dummy start/end nodes (display only; no drag or click). */
-const dummyNodes = ref<Array<{ x: number; y: number; kind: "start" | "end" }>>([]);
-/** Pan offset from dragging empty area; used for node position and link path so links follow cards. */
+const dummyNodes = ref<DummyNodeItem[]>([]);
+
+/** Pan offset from dragging empty area; used for node position and link path. */
 const panOffset = ref({ x: 0, y: 0 });
-/** Links: sourceKey/targetKey for drawing; points from layout (array or {x,y}). */
-const links = ref<
-  Array<{
-    sourceKey: string;
-    targetKey: string;
-    points: [number, number][];
-  }>
->([]);
+
+/** Links between nodes: sourceKey/targetKey for drawing; points from layout. */
+const links = ref<LinkItem[]>([]);
+
+/** Flag to ignore next click event (used after drag to prevent accidental clicks). */
+const ignoreNextClick = ref(false);
+
+/** D3 zoom behavior instance. */
+let zoomBehavior: d3.ZoomBehavior<HTMLDivElement, unknown> | null = null;
+
+/** Drag state for node dragging. */
+let dragState: {
+  nodeKey: string;
+  startX: number;
+  startY: number;
+  startClientX: number;
+  startClientY: number;
+  moved: boolean;
+} | null = null;
+
+// ============================================================================
+// Computed Properties
+// ============================================================================
 
 /** Canvas size matches container. */
 const canvasSize = computed(() => ({
   width: containerSize.value.width,
   height: containerSize.value.height,
 }));
-
-/** Precomputed path `d` for each link; avoids calling linkPathD per link on every render. */
-const linkPathsD = computed(() =>
-  links.value.map((link) =>
-    linkPathD(link, nodes.value, dummyNodes.value, panOffset.value)
-  )
-);
-
-/** Arrow position and rotation at each link midpoint; one-to-one with links. */
-const linkArrows = computed(() =>
-  links.value.map((link) =>
-    linkArrowMid(link, nodes.value, dummyNodes.value, panOffset.value)
-  )
-);
 
 /** Offset to center the layout inside the canvas. */
 const layoutOffset = computed(() => {
@@ -108,39 +153,72 @@ const layoutOffset = computed(() => {
   };
 });
 
-let zoomBehavior: d3.ZoomBehavior<HTMLDivElement, unknown> | null = null;
+/** Precomputed SVG path `d` attribute for each link. */
+const linkPathsD = computed(() =>
+  links.value.map((link) =>
+    linkPathD(link, nodes.value, dummyNodes.value, panOffset.value)
+  )
+);
 
-/** Builds the DAG from group services and dependency_ids; returns null on empty or error. */
+/** Arrow position and rotation at each link midpoint. */
+const linkArrows = computed(() =>
+  links.value.map((link) =>
+    linkArrowMid(link, nodes.value, dummyNodes.value, panOffset.value)
+  )
+);
+
+// ============================================================================
+// DAG Construction
+// ============================================================================
+
+/**
+ * Builds the DAG from group services and dependency_ids.
+ * Adds dummy start/end nodes for roots and leaves.
+ * @returns The constructed DAG, or null if group is empty or construction fails.
+ */
 function buildDag() {
   const group = props.group;
   if (!group || group.services.length === 0) return null;
 
-  const serviceMap = new Map(group.services.map((s) => [String(s.service_id), s]));
+  // Create a map for quick service lookup by ID
+  const serviceMap = new Map(
+    group.services.map((s) => [String(s.service_id), s])
+  );
+
+  // Build link data: [sourceId, targetId] pairs
   const linkData: [string, string][] = [];
 
-  for (const svc of group.services) {
-    const targetId = String(svc.service_id);
-    if (svc.dependency_ids.length > 0) {
-      for (const depId of svc.dependency_ids) {
+  // Add links from dependencies to services
+  for (const service of group.services) {
+    const targetId = String(service.service_id);
+    if (service.dependency_ids.length > 0) {
+      // Service has dependencies: link from each dependency to this service
+      for (const depId of service.dependency_ids) {
         linkData.push([String(depId), targetId]);
       }
     } else {
+      // Service has no dependencies: link from dummy start node
       linkData.push([DUMMY_START_ID, targetId]);
     }
   }
 
-  const asSource = new Set(linkData.map(([s]) => s));
-  for (const svc of group.services) {
-    const id = String(svc.service_id);
-    if (!asSource.has(id)) linkData.push([id, DUMMY_END_ID]);
+  // Find leaf nodes (services that are not sources of any link) and link to dummy end
+  const sourceIds = new Set(linkData.map(([sourceId]) => sourceId));
+  for (const service of group.services) {
+    const serviceId = String(service.service_id);
+    if (!sourceIds.has(serviceId)) {
+      linkData.push([serviceId, DUMMY_END_ID]);
+    }
   }
 
+  // Build the DAG using d3-dag
   const builder = graphConnect()
-    .sourceId(([s]: [string, string]) => s)
-    .targetId(([, t]: [string, string]) => t)
+    .sourceId(([sourceId]: [string, string]) => sourceId)
+    .targetId(([, targetId]: [string, string]) => targetId)
     .nodeDatum((id: string) => {
-      if (id === DUMMY_START_ID) return dummyDatum(DUMMY_START_ID);
-      if (id === DUMMY_END_ID) return dummyDatum(DUMMY_END_ID);
+      // Return dummy node for start/end, or actual service
+      if (id === DUMMY_START_ID) return createDummyDatum(DUMMY_START_ID);
+      if (id === DUMMY_END_ID) return createDummyDatum(DUMMY_END_ID);
       return (
         serviceMap.get(id) ??
         ({
@@ -160,17 +238,24 @@ function buildDag() {
     .single(true);
 
   try {
-    const dag = builder(linkData as [string, string][]);
-    return dag;
+    return builder(linkData as [string, string][]);
   } catch {
     return null;
   }
 }
 
-/** Runs DAG layout and updates nodes, dummyNodes, links, and layoutResult. */
+// ============================================================================
+// Layout Computation
+// ============================================================================
+
+/**
+ * Runs DAG layout calculation and updates nodes, dummyNodes, links, and layoutResult.
+ * Uses sugiyama layout algorithm from d3-dag.
+ */
 function computeLayout() {
   const dag = buildDag();
   if (!dag) {
+    // Clear all layout data if DAG construction failed
     layoutResult.value = null;
     nodes.value = [];
     dummyNodes.value = [];
@@ -178,34 +263,46 @@ function computeLayout() {
     return;
   }
 
+  // Configure sugiyama layout
   const layout = sugiyama()
     .nodeSize([NODE_WIDTH, NODE_HEIGHT])
-    .gap([128, 64])
+    .gap([128, 128])
     .coord(coordCenter())
     .decross(decrossTwoLayer().passes(20));
 
+  // Calculate layout
   const { width, height } = layout(dag);
-
   layoutResult.value = { width, height };
-  panOffset.value = { x: 0, y: 0 };
+  panOffset.value = { x: 0, y: 0 }; // Reset pan on layout recalculation
+
+  // Extract nodes from DAG
   const nodeList = [...dag.nodes()];
-  const isDummy = (name: string) => name === DUMMY_START_ID || name === DUMMY_END_ID;
+
+  // Separate real nodes from dummy nodes
   nodes.value = nodeList
-    .filter((node) => !isDummy((node.data as ServiceItemType).name))
+    .filter((node) => !isDummyNode((node.data as ServiceItemType).name))
     .map((node) => ({
       x: node.x,
       y: node.y,
       data: node.data as ServiceItemType,
     }));
+
   dummyNodes.value = nodeList
-    .filter((node) => isDummy((node.data as ServiceItemType).name))
-    .map((node) => ({
-      x: node.x,
-      y: node.y,
-      kind: (node.data as ServiceItemType).name === DUMMY_END_ID ? "end" : "start",
-    }));
+    .filter((node) => isDummyNode((node.data as ServiceItemType).name))
+    .map((node) => {
+      const name = (node.data as ServiceItemType).name;
+      return {
+        x: node.x,
+        y: node.y,
+        kind: name === DUMMY_END_ID ? "end" : "start",
+      };
+    });
+
+  // Extract links and normalize point coordinates
   links.value = [...dag.links()].map((link) => {
-    const rawPoints = (link.points ?? []) as Array<[number, number] | { x: number; y: number }>;
+    const rawPoints = (link.points ?? []) as Array<
+      [number, number] | { x: number; y: number }
+    >;
     const points: [number, number][] = rawPoints.map((p) =>
       Array.isArray(p) ? [p[0], p[1]] : [p.x, p.y]
     );
@@ -217,13 +314,17 @@ function computeLayout() {
   });
 }
 
-type NodeItem = (typeof nodes.value)[number];
-type DummyNodeItem = (typeof dummyNodes.value)[number];
-type LinkItem = (typeof links.value)[number];
+// ============================================================================
+// Position Resolution
+// ============================================================================
 
 /**
- * Resolves screen position for a node key (real or dummy).
- * @param offset - Layout offset + pan offset.
+ * Resolves screen position for a node by its key (real or dummy).
+ * @param key - Node key (from nodeKey function or DUMMY_START_ID/DUMMY_END_ID).
+ * @param nodeList - List of real service nodes.
+ * @param dummyList - List of dummy nodes.
+ * @param offset - Combined layout offset + pan offset.
+ * @returns Screen position {x, y} or null if node not found.
  */
 function resolveNodePosition(
   key: string,
@@ -232,19 +333,28 @@ function resolveNodePosition(
   offset: { x: number; y: number }
 ): { x: number; y: number } | null {
   if (key === DUMMY_START_ID) {
-    const d = dummyList.find((n) => n.kind === "start");
-    return d ? { x: d.x + offset.x, y: d.y + offset.y } : null;
+    const dummy = dummyList.find((n) => n.kind === "start");
+    return dummy ? { x: dummy.x + offset.x, y: dummy.y + offset.y } : null;
   }
   if (key === DUMMY_END_ID) {
-    const d = dummyList.find((n) => n.kind === "end");
-    return d ? { x: d.x + offset.x, y: d.y + offset.y } : null;
+    const dummy = dummyList.find((n) => n.kind === "end");
+    return dummy ? { x: dummy.x + offset.x, y: dummy.y + offset.y } : null;
   }
-  const n = nodeList.find((node) => nodeKey(node.data) === key);
-  return n ? { x: n.x + offset.x, y: n.y + offset.y } : null;
+  const node = nodeList.find((node) => nodeKey(node.data) === key);
+  return node ? { x: node.x + offset.x, y: node.y + offset.y } : null;
 }
 
+// ============================================================================
+// Link Rendering
+// ============================================================================
+
 /**
- * Builds the path `d` for a link from current node/dummy positions and offset (same space as cards).
+ * Builds the SVG path `d` attribute for a link (cubic Bezier curve).
+ * @param link - Link item with sourceKey and targetKey.
+ * @param nodeList - List of real service nodes.
+ * @param dummyList - List of dummy nodes.
+ * @param offset - Combined layout offset + pan offset.
+ * @returns SVG path string or empty string if positions not found.
  */
 function linkPathD(
   link: LinkItem,
@@ -252,17 +362,31 @@ function linkPathD(
   dummyList: DummyNodeItem[],
   offset: { x: number; y: number }
 ): string {
-  const sourcePos = resolveNodePosition(link.sourceKey, nodeList, dummyList, offset);
-  const targetPos = resolveNodePosition(link.targetKey, nodeList, dummyList, offset);
+  const sourcePos = resolveNodePosition(
+    link.sourceKey,
+    nodeList,
+    dummyList,
+    offset
+  );
+  const targetPos = resolveNodePosition(
+    link.targetKey,
+    nodeList,
+    dummyList,
+    offset
+  );
   if (!sourcePos || !targetPos) return "";
 
+  // Create a smooth cubic Bezier curve
   const { x: sx, y: sy } = sourcePos;
   const { x: tx, y: ty } = targetPos;
   const midX = (sx + tx) / 2;
   return `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`;
 }
 
-/** Cubic Bezier B(t) at t=0.5: (1-t)³P0 + 3(1-t)²t P1 + 3(1-t)t² P2 + t³ P3. */
+/**
+ * Calculates the midpoint of a cubic Bezier curve at t=0.5.
+ * Formula: B(t) = (1-t)³P0 + 3(1-t)²t P1 + 3(1-t)t² P2 + t³ P3
+ */
 function bezierMidpoint(
   p0: { x: number; y: number },
   p1: { x: number; y: number },
@@ -281,7 +405,10 @@ function bezierMidpoint(
   };
 }
 
-/** Tangent direction (radians) of the Bezier at t=0.5, toward target. */
+/**
+ * Calculates the tangent direction (in radians) of a cubic Bezier curve at t=0.5.
+ * Used to orient arrows along the curve direction.
+ */
 function bezierTangentAtMid(
   p0: { x: number; y: number },
   p1: { x: number; y: number },
@@ -289,82 +416,114 @@ function bezierTangentAtMid(
   p3: { x: number; y: number }
 ): number {
   const t = 0.5;
-  const dx = 3 * (1 - t) * (1 - t) * (p1.x - p0.x) + 6 * (1 - t) * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x);
-  const dy = 3 * (1 - t) * (1 - t) * (p1.y - p0.y) + 6 * (1 - t) * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y);
+  const dx =
+    3 * (1 - t) * (1 - t) * (p1.x - p0.x) +
+    6 * (1 - t) * t * (p2.x - p1.x) +
+    3 * t * t * (p3.x - p2.x);
+  const dy =
+    3 * (1 - t) * (1 - t) * (p1.y - p0.y) +
+    6 * (1 - t) * t * (p2.y - p1.y) +
+    3 * t * t * (p3.y - p2.y);
   return Math.atan2(dy, dx);
 }
 
-/** Arrow position and rotation at link midpoint (same curve as linkPathD). */
+/**
+ * Calculates arrow position and rotation at link midpoint.
+ * Uses the same Bezier curve as linkPathD to ensure arrow aligns with the curve.
+ * @returns Arrow position {x, y} and rotation angle in degrees, or null if positions not found.
+ */
 function linkArrowMid(
   link: LinkItem,
   nodeList: NodeItem[],
   dummyList: DummyNodeItem[],
   offset: { x: number; y: number }
 ): { x: number; y: number; angleDeg: number } | null {
-  const sourcePos = resolveNodePosition(link.sourceKey, nodeList, dummyList, offset);
-  const targetPos = resolveNodePosition(link.targetKey, nodeList, dummyList, offset);
+  const sourcePos = resolveNodePosition(
+    link.sourceKey,
+    nodeList,
+    dummyList,
+    offset
+  );
+  const targetPos = resolveNodePosition(
+    link.targetKey,
+    nodeList,
+    dummyList,
+    offset
+  );
   if (!sourcePos || !targetPos) return null;
 
-  const sx = sourcePos.x;
-  const sy = sourcePos.y;
-  const tx = targetPos.x;
-  const ty = targetPos.y;
+  // Build Bezier control points (same as linkPathD)
+  const { x: sx, y: sy } = sourcePos;
+  const { x: tx, y: ty } = targetPos;
   const midX = (sx + tx) / 2;
   const p0 = { x: sx, y: sy };
   const p1 = { x: midX, y: sy };
   const p2 = { x: midX, y: ty };
   const p3 = { x: tx, y: ty };
+
+  // Calculate midpoint and tangent direction
   const mid = bezierMidpoint(p0, p1, p2, p3);
   const angleRad = bezierTangentAtMid(p0, p1, p2, p3);
   const angleDeg = (angleRad * 180) / Math.PI;
+
   return { x: mid.x, y: mid.y, angleDeg };
 }
 
-/** Binds d3 zoom (pan only) to container; drag on empty area updates panOffset. */
+// ============================================================================
+// Interaction Handlers
+// ============================================================================
+
+/**
+ * Sets up d3 zoom behavior for panning (zoom disabled, scale fixed at 1).
+ * Panning only works on empty areas (not on nodes).
+ */
 function setupZoom() {
   const container = containerRef.value;
   const graphContent = graphContentRef.value;
   if (!container || !graphContent || !layoutResult.value) return;
 
-  const initialTransform = d3.zoomIdentity;
-
   zoomBehavior = d3
     .zoom<HTMLDivElement, unknown>()
-    .scaleExtent([1, 1])
+    .scaleExtent([1, 1]) // Disable zooming, only allow panning
     .filter((event: MouseEvent) => {
+      // Only allow panning on empty areas, not on nodes
       const target = event.target as Element;
-      return !target.closest?.(".node-wrap") && !target.closest?.(".dummy-wrap");
+      return (
+        !target.closest?.(".node-wrap") && !target.closest?.(".dummy-wrap")
+      );
     })
     .on("zoom", (event) => {
       panOffset.value = { x: event.transform.x, y: event.transform.y };
     });
 
-  const sel = d3.select(container as HTMLDivElement);
-  sel.call(zoomBehavior as d3.ZoomBehavior<HTMLDivElement, unknown>);
-  sel.call(
-    zoomBehavior.transform as (sel: d3.Selection<HTMLDivElement, unknown, null, undefined>, t: d3.ZoomTransform) => void,
-    initialTransform
+  const selection = d3.select(container as HTMLDivElement);
+  selection.call(zoomBehavior as d3.ZoomBehavior<HTMLDivElement, unknown>);
+  selection.call(
+    zoomBehavior.transform as (
+      sel: d3.Selection<HTMLDivElement, unknown, null, undefined>,
+      t: d3.ZoomTransform
+    ) => void,
+    d3.zoomIdentity
   );
 }
 
+/**
+ * Handles node click events.
+ * Ignores clicks that occur immediately after a drag operation.
+ */
 function onNodeClick(service: ServiceItemType) {
   if (ignoreNextClick.value) return;
   emit("node-click", service);
 }
 
-let dragState: {
-  nodeKey: string;
-  startX: number;
-  startY: number;
-  startClientX: number;
-  startClientY: number;
-  moved: boolean;
-} | null = null;
-const ignoreNextClick = ref(false);
-
+/**
+ * Handles node drag start (mousedown on a node).
+ * Only responds to left mouse button (button 0).
+ */
 function onNodeMouseDown(e: MouseEvent, node: NodeItem) {
-  if (e.button !== 0) return;
+  if (e.button !== 0) return; // Only left mouse button
   e.preventDefault();
+
   dragState = {
     nodeKey: nodeKey(node.data),
     startX: node.x,
@@ -373,15 +532,23 @@ function onNodeMouseDown(e: MouseEvent, node: NodeItem) {
     startClientY: e.clientY,
     moved: false,
   };
+
   window.addEventListener("mousemove", onWindowMouseMove);
   window.addEventListener("mouseup", onWindowMouseUp);
 }
 
+/**
+ * Handles node dragging (mousemove while dragging).
+ * Updates the dragged node's position.
+ */
 function onWindowMouseMove(e: MouseEvent) {
   if (!dragState) return;
+
   const dx = e.clientX - dragState.startClientX;
   const dy = e.clientY - dragState.startClientY;
   dragState.moved = true;
+
+  // Update the dragged node's position
   nodes.value = nodes.value.map((n) =>
     nodeKey(n.data) === dragState!.nodeKey
       ? { ...n, x: dragState!.startX + dx, y: dragState!.startY + dy }
@@ -389,18 +556,29 @@ function onWindowMouseMove(e: MouseEvent) {
   );
 }
 
+/**
+ * Handles node drag end (mouseup).
+ * If the node was moved, ignore the next click to prevent accidental navigation.
+ */
 function onWindowMouseUp() {
   if (dragState?.moved) {
+    // Ignore click event immediately after drag
     ignoreNextClick.value = true;
     setTimeout(() => {
       ignoreNextClick.value = false;
     }, 0);
   }
+
   dragState = null;
   window.removeEventListener("mousemove", onWindowMouseMove);
   window.removeEventListener("mouseup", onWindowMouseUp);
 }
 
+// ============================================================================
+// Lifecycle & Watchers
+// ============================================================================
+
+// Recompute layout when group changes
 watch(
   () => props.group,
   () => computeLayout(),
@@ -409,10 +587,16 @@ watch(
 
 onMounted(() => {
   computeLayout();
-  const el = containerRef.value;
-  if (el) {
-    containerSize.value = { width: el.clientWidth, height: el.clientHeight };
-    const ro = new ResizeObserver(() => {
+
+  // Set up ResizeObserver to track container size changes
+  const container = containerRef.value;
+  if (container) {
+    containerSize.value = {
+      width: container.clientWidth,
+      height: container.clientHeight,
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
       if (containerRef.value) {
         containerSize.value = {
           width: containerRef.value.clientWidth,
@@ -420,16 +604,26 @@ onMounted(() => {
         };
       }
     });
-    ro.observe(el);
-    onUnmounted(() => ro.disconnect());
+    resizeObserver.observe(container);
+    onUnmounted(() => resizeObserver.disconnect());
   }
 });
 
-watch([layoutResult, containerRef, graphContentRef, containerSize], () => {
-  if (layoutResult.value && containerRef.value && graphContentRef.value && containerSize.value.width > 0) {
-    setTimeout(setupZoom, 0);
+// Set up zoom behavior when layout is ready
+watch(
+  [layoutResult, containerRef, graphContentRef, containerSize],
+  () => {
+    if (
+      layoutResult.value &&
+      containerRef.value &&
+      graphContentRef.value &&
+      containerSize.value.width > 0
+    ) {
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(setupZoom, 0);
+    }
   }
-});
+);
 
 onUnmounted(() => {
   zoomBehavior = null;
@@ -475,7 +669,7 @@ onUnmounted(() => {
             marginLeft: -NODE_WIDTH / 2 + 'px',
             marginTop: -NODE_HEIGHT / 2 + 'px',
           }" @mousedown="onNodeMouseDown($event, node)" @click="onNodeClick(node.data)">
-            <ServiceItem :service="node.data" layout="card" @click="onNodeClick(node.data)" />
+            <ServiceItem :service="node.data" layout="card" />
           </div>
         </div>
       </div>

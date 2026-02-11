@@ -1,9 +1,10 @@
 <!--
   ServiceGroupCard: Card for one service group with header (name, status tag, launch/stop),
   and a grid or list of ServiceItems. Clicking the card navigates to group detail.
+  Handles service deletion with confirmation.
 -->
 <script setup lang="ts">
-import { NCard, NButton, NTag, NSpace } from "naive-ui";
+import { NCard, NButton, NTag, NSpace, useMessage } from "naive-ui";
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import ServiceItem from "./ServiceItem.vue";
@@ -19,6 +20,7 @@ const props = defineProps<{
 
 const router = useRouter();
 const store = useServiceStore();
+const message = useMessage();
 
 /** Number of services with status "Running"; computed once and reused for summary and status. */
 const runningCount = computed(() =>
@@ -53,11 +55,19 @@ const headerBorderClass = computed(() => `header-border-${groupStatus.value}`);
 const launching = computed(() => false);
 
 async function launch() {
-  await store.launchGroup(props.group.group_id);
+  try {
+    await store.launchGroup(props.group.group_id);
+  } catch (error) {
+    message.error(`Failed to launch group: ${error}`);
+  }
 }
 
 async function stop() {
-  await store.stopGroup(props.group.group_id);
+  try {
+    await store.stopGroup(props.group.group_id);
+  } catch (error) {
+    message.error(`Failed to stop group: ${error}`);
+  }
 }
 
 const emit = defineEmits<{
@@ -70,6 +80,24 @@ function goDetail() {
 
 function onServiceClick(service: ServiceItemType) {
   emit("service-click", service);
+}
+
+/**
+ * Handles service deletion.
+ * In mock mode: removes from local state directly.
+ * In real mode: calls backend API and marks config as changed.
+ * @param service - The service to delete.
+ */
+async function onServiceDelete(service: ServiceItemType): Promise<void> {
+  try {
+    await store.removeServiceFromStore({
+      name: service.name,
+      version: service.version,
+    });
+    message.success(`Service "${service.name}:${service.version}" deleted successfully`);
+  } catch (error) {
+    message.error(`Failed to delete service: ${error}`);
+  }
 }
 </script>
 
@@ -93,7 +121,7 @@ function onServiceClick(service: ServiceItemType) {
     </template>
     <div class="group-body" :class="viewMode === 'grid' ? 'body-grid' : 'body-list'" @click.stop>
       <ServiceItem v-for="svc in group.services" :key="`${svc.name}-${svc.version}`" :service="svc"
-        :layout="viewMode === 'grid' ? 'card' : 'list'" @click="onServiceClick" />
+        :layout="viewMode === 'grid' ? 'card' : 'list'" @click="onServiceClick" @delete="onServiceDelete" />
     </div>
   </n-card>
 </template>
