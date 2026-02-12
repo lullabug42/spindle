@@ -109,7 +109,7 @@ export const storedServiceConfigSchema = z.object({
   workspace: z.string().nullable(),
   args: z.array(z.string()),
   dependency_ids: z.array(z.number()),
-  group_id: z.number(),
+  group_id: z.number().nullable(), // null for newly added services that haven't been grouped yet
 });
 
 /** Inferred type from {@link storedServiceConfigSchema}. */

@@ -3,7 +3,7 @@
   Requires group context to resolve dependency names/versions/status.
 -->
 <script setup lang="ts">
-import { NModal, NDescriptions, NDescriptionsItem, NTag, NIcon } from "naive-ui";
+import { NModal, NDescriptions, NDescriptionsItem, NTag, NIcon, NTooltip } from "naive-ui";
 import { CheckCircleFilled, ErrorFilled, StopFilled } from "@vicons/material";
 import { computed } from "vue";
 import type { ServiceItem as ServiceItemType, GroupWithStatus } from "@/types/service.types";
@@ -72,12 +72,17 @@ function onClose() {
           {{ service.version }}
         </n-descriptions-item>
         <n-descriptions-item label="Status">
-          <n-tag :type="statusType" size="small" class="status-tag">
-            <span class="status-tag-inner">
-              <n-icon :component="StatusIcon" size="14" />
-              <span>{{ service.status }}</span>
-            </span>
-          </n-tag>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-tag :type="statusType" size="small" class="status-tag">
+                <span class="status-tag-inner">
+                  <n-icon :component="StatusIcon" size="14" />
+                  <span class="status-text">{{ service.status }}</span>
+                </span>
+              </n-tag>
+            </template>
+            {{ service.status }}
+          </n-tooltip>
         </n-descriptions-item>
       </n-descriptions>
       <div v-if="dependencyList.length" class="deps-section">
@@ -97,10 +102,24 @@ function onClose() {
 </template>
 
 <style scoped>
+.status-tag {
+  width: 6rem;
+  overflow: hidden;
+}
+
 .status-tag-inner {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+.status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 4rem;
 }
 
 .deps-section {

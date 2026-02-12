@@ -264,9 +264,6 @@ export const useServiceStore = defineStore("service", () => {
   /** Counter for generating unique service IDs in mock mode. */
   let mockServiceIdCounter = 1000;
 
-  /** True when service configuration has changed and needs to be rebuilt. */
-  const hasConfigChanges = ref(false);
-
   /**
    * Checks if a service with the given name and version already exists.
    * @param name - Service name.
@@ -365,15 +362,12 @@ export const useServiceStore = defineStore("service", () => {
       workspace: params.workspace ?? null,
       args: params.args,
       dependency_ids: dependencyIds, // Dependencies resolved to service_ids
-      group_id: -1, // Indicates unassigned/pending
+      group_id: null, // null indicates unassigned/pending (will be set after reload)
       status: "Stopped",
     };
 
-    // Add to pending list
+    // Add to pending list (for dependency checking)
     pendingServices.value.push(newService);
-
-    // Mark config as changed
-    hasConfigChanges.value = true;
 
     return serviceId;
   }
@@ -454,12 +448,10 @@ export const useServiceStore = defineStore("service", () => {
       if (useMock.value) {
         // Mock mode: just remove from pending list
         pendingServices.value.splice(pendingIndex, 1);
-        hasConfigChanges.value = true;
       } else {
-        // Real mode: call backend API to delete from database, then remove from pending list
+        // Real mode: call backend API to delete from database, then reload service manager
         await serviceApi.removeService(params);
-        pendingServices.value.splice(pendingIndex, 1);
-        hasConfigChanges.value = true;
+        await reloadServiceManager();
       }
       return;
     }
@@ -492,14 +484,11 @@ export const useServiceStore = defineStore("service", () => {
           break;
         }
       }
-      // Mark config as changed (for mock mode)
-      hasConfigChanges.value = true;
       // No need to fetchGroups in mock mode since we updated state directly
     } else {
-      // Real mode: call the backend API and refresh
+      // Real mode: call the backend API and reload service manager
       await serviceApi.removeService(params);
-      hasConfigChanges.value = true;
-      await fetchGroups();
+      await reloadServiceManager();
     }
   }
 
@@ -512,17 +501,64 @@ export const useServiceStore = defineStore("service", () => {
    */
   async function reloadServiceManager(): Promise<void> {
     if (useMock.value) {
-      // In mock mode, just clear the flag and pending services
-      hasConfigChanges.value = false;
+      // In mock mode, just clear pending services
       pendingServices.value = [];
       return;
     }
     // Real mode: sync with backend
     await serviceApi.reloadServiceManager();
     await serviceApi.updateServiceGroupMembership();
-    hasConfigChanges.value = false;
     // Clear pending services after successful reload
     pendingServices.value = [];
+    await fetchGroups();
+  }
+
+  /**
+   * Sets or updates the alias for a group.
+   * In mock mode: updates the local state directly.
+   * In real mode: calls the backend API and refreshes groups.
+   * @param groupId - The group ID to set alias for.
+   * @param alias - The alias string to set.
+   * @returns Resolves when the alias is set.
+   * @throws Rejects with an error message if the operation fails.
+   */
+  async function setGroupAlias(groupId: number, alias: string): Promise<void> {
+    if (useMock.value) {
+      // Mock mode: update local state
+      const group = groups.value.find((g) => g.group_id === groupId);
+      if (group) {
+        group.alias = alias;
+        group.displayName = alias;
+      }
+      return;
+    }
+    // Real mode: call API and refresh
+    await serviceApi.insertGroupAlias({ group_id: groupId, alias });
+    await fetchGroups();
+  }
+
+  /**
+   * Removes the alias from a group.
+   * In mock mode: updates the local state directly.
+   * In real mode: calls the backend API and refreshes groups.
+   * @param groupId - The group ID to remove alias from.
+   * @returns Resolves when the alias is removed.
+   * @throws Rejects with an error message if the operation fails.
+   */
+  async function removeGroupAlias(groupId: number): Promise<void> {
+    if (useMock.value) {
+      // Mock mode: update local state
+      const group = groups.value.find((g) => g.group_id === groupId);
+      if (group) {
+        group.alias = null;
+        // Find index among unaliased groups for naming
+        const unaliasedIndex = groups.value.filter((g) => !g.alias).findIndex((g) => g.group_id === groupId);
+        group.displayName = `Unnamed Group ${unaliasedIndex >= 0 ? unaliasedIndex : 0}`;
+      }
+      return;
+    }
+    // Real mode: call API and refresh
+    await serviceApi.removeGroupAlias({ group_id: groupId });
     await fetchGroups();
   }
 
@@ -542,7 +578,8 @@ export const useServiceStore = defineStore("service", () => {
     groupById,
     addServiceToStore,
     removeServiceFromStore,
-    hasConfigChanges,
     reloadServiceManager,
+    setGroupAlias,
+    removeGroupAlias,
   };
 });

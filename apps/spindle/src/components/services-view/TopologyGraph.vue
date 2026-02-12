@@ -74,7 +74,7 @@ function createDummyDatum(name: string): ServiceItemType {
     workspace: null,
     args: [],
     dependency_ids: [],
-    group_id: -1,
+    group_id: null,
     status: "Stopped",
   } as ServiceItemType;
 }

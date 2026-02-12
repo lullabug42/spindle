@@ -60,13 +60,23 @@ function confirmDelete() {
     <n-card v-if="layout === 'card'" class="service-item-card" hoverable @click="onClick">
       <template #header>
         <div class="card-header-inner">
-          <span class="service-name">{{ service.name }}</span>
-          <n-tag :type="statusConfig.type" size="small" class="status-tag">
-            <span class="status-tag-inner">
-              <n-icon :component="statusConfig.icon" size="14" />
-              <span>{{ service.status }}</span>
-            </span>
-          </n-tag>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <span class="service-name">{{ service.name }}</span>
+            </template>
+            {{ service.name }}
+          </n-tooltip>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-tag :type="statusConfig.type" size="small" class="status-tag">
+                <span class="status-tag-inner">
+                  <n-icon :component="statusConfig.icon" size="14" />
+                  <span class="status-text">{{ service.status }}</span>
+                </span>
+              </n-tag>
+            </template>
+            {{ service.status }}
+          </n-tooltip>
         </div>
       </template>
       <div class="card-body">
@@ -99,7 +109,12 @@ function confirmDelete() {
     <div v-else class="service-item-list" @click="onClick">
       <div class="list-left">
         <div class="list-name-row">
-          <span class="service-name">{{ service.name }}</span>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <span class="service-name">{{ service.name }}</span>
+            </template>
+            {{ service.name }}
+          </n-tooltip>
           <span class="list-service-id">#{{ service.service_id }}</span>
         </div>
         <n-tooltip trigger="hover">
@@ -110,10 +125,15 @@ function confirmDelete() {
       </n-tooltip>
       </div>
       <div class="list-center">
-        <n-tag :type="statusConfig.type" size="small">
-          <n-icon :component="statusConfig.icon" size="14" />
+        <n-tooltip trigger="hover">
+          <template #trigger>
+            <n-tag :type="statusConfig.type" size="small" class="list-status-tag">
+              <n-icon :component="statusConfig.icon" size="14" />
+              <span class="status-text">{{ service.status }}</span>
+            </n-tag>
+          </template>
           {{ service.status }}
-        </n-tag>
+        </n-tooltip>
       </div>
       <div class="list-right" @click.stop>
         <n-space>
@@ -182,12 +202,25 @@ function confirmDelete() {
 
 .status-tag {
   flex-shrink: 0;
+  width: 6rem;
 }
 
 .status-tag-inner {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  max-width: 100%;
+}
+
+.status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 4rem;
+}
+
+.list-status-tag {
+  width: 6rem;
 }
 
 .card-body {
@@ -291,6 +324,7 @@ function confirmDelete() {
 .list-center {
   flex-shrink: 0;
   margin: 0 1rem;
+  min-width: 0;
 }
 
 .list-right {

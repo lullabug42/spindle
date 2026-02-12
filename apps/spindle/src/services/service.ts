@@ -166,7 +166,7 @@ export function serviceState(params: ServiceNameVersionParams): Promise<string> 
  */
 export function stopGroup(params: GroupIdParams): Promise<void> {
   return invoke<void>(CMD.stop_group, {
-    group_id: params.group_id,
+    groupId: params.group_id,
   });
 }
 

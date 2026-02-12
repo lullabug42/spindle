@@ -6,8 +6,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
-import { NButton, NSpace, NFlex, useMessage } from "naive-ui";
-import { GridViewOutlined, HubOutlined } from "@vicons/material";
+import { NButton, NSpace, NFlex, useMessage, NModal, NInput, NTooltip } from "naive-ui";
+import { GridViewOutlined, HubOutlined, EditOutlined } from "@vicons/material";
 import { NIcon } from "naive-ui";
 import ServiceItem from "@/components/services-view/ServiceItem.vue";
 import TopologyGraph from "@/components/services-view/TopologyGraph.vue";
@@ -21,6 +21,11 @@ const message = useMessage();
 
 const detailModalVisible = ref(false);
 const selectedService = ref<ServiceItemType | null>(null);
+
+/** Alias editing modal state. */
+const aliasModalVisible = ref(false);
+const aliasInput = ref("");
+const isSavingAlias = ref(false);
 
 /** Resolved group id from route; NaN when invalid (e.g. non-numeric param). */
 const groupId = computed(() => {
@@ -84,6 +89,38 @@ async function onServiceDelete(service: ServiceItemType): Promise<void> {
     message.error(`${error}`);
   }
 }
+
+/** Opens the alias editing modal. */
+function openAliasModal() {
+  aliasInput.value = group.value?.alias ?? "";
+  aliasModalVisible.value = true;
+}
+
+/** Closes the alias editing modal. */
+function closeAliasModal() {
+  aliasModalVisible.value = false;
+}
+
+/** Saves the alias (or removes if empty). */
+async function saveAlias() {
+  if (!group.value) return;
+  isSavingAlias.value = true;
+  try {
+    const trimmed = aliasInput.value.trim();
+    if (trimmed) {
+      await store.setGroupAlias(group.value.group_id, trimmed);
+      message.success(`Alias set to "${trimmed}"`);
+    } else {
+      await store.removeGroupAlias(group.value.group_id);
+      message.success("Alias removed");
+    }
+    closeAliasModal();
+  } catch (error) {
+    message.error(`Failed to save alias: ${error}`);
+  } finally {
+    isSavingAlias.value = false;
+  }
+}
 </script>
 
 <template>
@@ -91,7 +128,17 @@ async function onServiceDelete(service: ServiceItemType): Promise<void> {
     <n-flex v-if="group" vertical :size="16">
       <n-flex align="center" justify="space-between" class="detail-header">
         <n-flex align="center" :size="12">
-          <h2 style="margin: 0">{{ group.displayName }}</h2>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <h2 style="margin: 0; cursor: pointer" @click="openAliasModal">{{ group.displayName }}</h2>
+            </template>
+            Click to edit alias
+          </n-tooltip>
+          <n-button quaternary circle size="small" @click="openAliasModal">
+            <template #icon>
+              <n-icon :component="EditOutlined" />
+            </template>
+          </n-button>
           <span class="group-meta">ID {{ group.group_id }} · {{ group.services.length }} services</span>
         </n-flex>
         <n-space>
@@ -135,6 +182,29 @@ async function onServiceDelete(service: ServiceItemType): Promise<void> {
     </div>
 
     <ServiceDetailModal v-model:visible="detailModalVisible" :service="selectedService" :group="group" />
+
+    <!-- Alias Editing Modal -->
+    <n-modal
+      v-model:show="aliasModalVisible"
+      preset="card"
+      title="Edit Group Alias"
+      style="width: 400px"
+      :mask-closable="false"
+    >
+      <n-input
+        v-model:value="aliasInput"
+        placeholder="Enter alias (leave empty to remove)"
+        maxlength="64"
+        clearable
+        @keyup.enter="saveAlias"
+      />
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="closeAliasModal">Cancel</n-button>
+          <n-button type="primary" :loading="isSavingAlias" @click="saveAlias">Save</n-button>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 

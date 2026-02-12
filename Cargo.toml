@@ -3,5 +3,5 @@ resolver = "3"
 members = [
     "crates/spindle-core",
     "crates/spindle-util",
-    "apps/spindle/src-tauri",
+    "apps/spindle/src-tauri", "crates/probe-service",
 ]

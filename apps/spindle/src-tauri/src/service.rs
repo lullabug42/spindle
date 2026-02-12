@@ -32,7 +32,8 @@ pub struct StoredServiceConfig {
     /// Database ids of dependency services.
     pub dependency_ids: Vec<u32>,
     /// Group id this service belongs to (matches [ServiceManager] group index).
-    pub group_id: u32,
+    /// `None` for newly added services that haven't been grouped yet.
+    pub group_id: Option<u32>,
 }
 
 /// One row from the `service_config` table: program path, description, workspace.
@@ -259,10 +260,10 @@ async fn query_stored_service_config(
         Some(ids) => ids,
         None => return None,
     };
-    let group_id = match query_service_group_id(service_id, &mut db_conn).await {
-        Some(group_id) => group_id,
-        None => return None,
-    };
+    // For newly added services, group_id may not exist yet.
+    // ServiceManager will automatically group services by dependencies,
+    // and update_service_group_membership will update the correct group_id.
+    let group_id = query_service_group_id(service_id, &mut db_conn).await;
     let ret = StoredServiceConfig {
         name,
         version,

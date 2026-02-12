@@ -25,10 +25,8 @@ import {
   ViewListOutlined,
   AddCircleFilled,
   DeleteOutlineOutlined,
-  RefreshOutlined,
 } from "@vicons/material";
 import ServiceGroupCard from "@/components/services-view/ServiceGroupCard.vue";
-import PendingServicesCard from "@/components/services-view/PendingServicesCard.vue";
 import { useServiceStore } from "@/stores/serviceStore";
 import type { ServiceItem as ServiceItemType } from "@/types/service.types";
 
@@ -110,7 +108,7 @@ const existingServices = computed(() => {
       services.add(`${svc.name}:${svc.version}`);
     }
   }
-  // Also include pending services (they exist but haven't been reloaded yet)
+  // Also include pending services (for dependency checking)
   for (const svc of store.pendingServices) {
     services.add(`${svc.name}:${svc.version}`);
   }
@@ -211,6 +209,11 @@ onUnmounted(() => {
  * @param service - The clicked service (used for group_id and name@version query).
  */
 function onServiceClick(service: ServiceItemType): void {
+  // Services in groups should always have a group_id
+  if (service.group_id === null) {
+    message.warning("Service is not yet assigned to a group");
+    return;
+  }
   router.push({
     name: "ServiceGroupDetail",
     params: { groupId: String(service.group_id) },
@@ -411,6 +414,12 @@ async function handleSubmit(): Promise<void> {
       dependencies,
     });
 
+    // In real mode, reload service manager to sync service_group_membership
+    // This ensures the newly added service is properly assigned to groups
+    if (!store.useMock) {
+      await store.reloadServiceManager();
+    }
+
     message.success("Service added successfully");
     closeAddModal();
     // Note: fetchGroups is now called inside addServiceToStore for real mode
@@ -430,34 +439,6 @@ async function handleSubmit(): Promise<void> {
 function allowNonWhitespace(value: string): boolean {
   return NON_WHITESPACE_REGEX.test(value);
 }
-
-/** Controls visibility of the reload confirmation modal. */
-const showReloadModal = ref(false);
-
-/** Opens the reload confirmation modal. */
-function openReloadModal(): void {
-  showReloadModal.value = true;
-}
-
-/** Closes the reload confirmation modal without reloading. */
-function closeReloadModal(): void {
-  showReloadModal.value = false;
-}
-
-/**
- * Reloads the service configuration and refreshes the service list.
- * Called after user confirms in the confirmation dialog.
- * Shows success/error messages based on the operation result.
- */
-async function handleReload(): Promise<void> {
-  closeReloadModal();
-  try {
-    await store.reloadServiceManager();
-    message.success("Service configuration reloaded successfully");
-  } catch (error) {
-    message.error(`Failed to reload service configuration: ${error}`);
-  }
-}
 </script>
 
 <template>
@@ -466,16 +447,7 @@ async function handleReload(): Promise<void> {
     <n-flex vertical :size="16">
       <!-- Header with title and view controls -->
       <n-flex align="center" justify="space-between">
-        <n-flex align="center" :size="12">
-          <h2 class="page-title">Services</h2>
-          <!-- Reload button - shown when config has changed -->
-          <n-button v-if="store.hasConfigChanges" type="warning" size="small" @click="openReloadModal">
-            <template #icon>
-              <n-icon :component="RefreshOutlined" />
-            </template>
-            Reload
-          </n-button>
-        </n-flex>
+        <h2 class="page-title">Services</h2>
         <n-space>
           <n-button quaternary :type="store.overviewViewMode === 'grid' ? 'primary' : undefined"
             @click="store.overviewViewMode = 'grid'">
@@ -499,12 +471,6 @@ async function handleReload(): Promise<void> {
           </n-button>
         </n-space>
       </n-flex>
-
-      <!-- Pending services card - shown when there are pending services -->
-      <PendingServicesCard 
-        :services="store.pendingServices" 
-        :is-mock="store.useMock"
-      />
 
       <!-- Loading state -->
       <n-flex v-if="store.loading && store.groups.length === 0" justify="center">
@@ -633,26 +599,6 @@ async function handleReload(): Promise<void> {
         </n-space>
       </template>
     </n-modal>
-
-    <!-- Reload Confirmation Modal -->
-    <n-modal v-model:show="showReloadModal" preset="card" title="Reload Configuration" style="width: 28rem"
-      :mask-closable="false">
-      <p class="reload-message">
-        Are you sure you want to reload the service configuration?
-      </p>
-      <p class="reload-hint">
-        This will reload the service configuration from the database.
-        {{ store.useMock ? "(Mock mode: no backend API calls will be made)" : "" }}
-      </p>
-      <template #footer>
-        <n-space justify="end">
-          <n-button @click="closeReloadModal">Cancel</n-button>
-          <n-button type="warning" @click="handleReload">
-            Reload
-          </n-button>
-        </n-space>
-      </template>
-    </n-modal>
   </div>
 </template>
 
@@ -691,20 +637,6 @@ async function handleReload(): Promise<void> {
 .mock-toggle-desc {
   font-size: 0.75rem;
   color: var(--n-text-color-3);
-}
-
-/** Reload confirmation modal styles. */
-.reload-message {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-
-.reload-hint {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--n-text-color-3);
-  line-height: 1.5;
 }
 
 /** Dynamic list container for args and dependencies. */
